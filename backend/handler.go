@@ -6,23 +6,18 @@ import (
 	"log/slog"
 	"net/http"
 
-	"github.com/OpenNSW/nsw/internal/task"
-	"github.com/OpenNSW/nsw/internal/workflow/model"
-	"github.com/OpenNSW/nsw/utils"
 	"github.com/google/uuid"
 )
 
 // OGAHandler handles HTTP requests for OGA portal operations
 type OGAHandler struct {
-	service     OGAService
-	taskManager task.TaskManager
+	service OGAService
 }
 
 // NewOGAHandler creates a new OGA handler instance
-func NewOGAHandler(service OGAService, taskManager task.TaskManager) *OGAHandler {
+func NewOGAHandler(service OGAService) *OGAHandler {
 	return &OGAHandler{
-		service:     service,
-		taskManager: taskManager,
+		service: service,
 	}
 }
 
@@ -30,42 +25,78 @@ func NewOGAHandler(service OGAService, taskManager task.TaskManager) *OGAHandler
 func (h *OGAHandler) parseTaskID(w http.ResponseWriter, r *http.Request) (uuid.UUID, error) {
 	taskIDStr := r.PathValue("taskId")
 	if taskIDStr == "" {
-		utils.WriteJSONError(w, http.StatusBadRequest, "taskId is required")
+		WriteJSONError(w, http.StatusBadRequest, "taskId is required")
 		return uuid.Nil, errors.New("taskId is required")
 	}
 
 	taskID, err := uuid.Parse(taskIDStr)
 	if err != nil {
-		utils.WriteJSONError(w, http.StatusBadRequest, "invalid taskId format")
+		WriteJSONError(w, http.StatusBadRequest, "invalid taskId format")
 		return uuid.Nil, err
 	}
 	return taskID, nil
 }
 
-// HandleGetApplications handles GET /api/oga/applications
-// Returns all applications ready for OGA review
-func (h *OGAHandler) HandleGetApplications(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		utils.WriteJSONError(w, http.StatusMethodNotAllowed, "Method not allowed")
+// HandleInjectData handles POST /api/oga/inject
+// This is the endpoint that external services use to inject data into OGA portal
+func (h *OGAHandler) HandleInjectData(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		WriteJSONError(w, http.StatusMethodNotAllowed, "Method not allowed")
 		return
 	}
 
 	ctx := r.Context()
-	applications, err := h.service.GetApplications(ctx)
-	if err != nil {
-		slog.ErrorContext(ctx, "failed to get applications", "error", err)
-		utils.WriteJSONError(w, http.StatusInternalServerError, "Failed to get applications")
+
+	var req InjectRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		WriteJSONError(w, http.StatusBadRequest, "Invalid request body: "+err.Error())
 		return
 	}
 
-	utils.WriteJSONResponse(w, http.StatusOK, applications)
+	// Create application in database
+	if err := h.service.CreateApplication(ctx, &req); err != nil {
+		slog.ErrorContext(ctx, "failed to create application", "error", err)
+		WriteJSONError(w, http.StatusInternalServerError, "Failed to create application: "+err.Error())
+		return
+	}
+
+	slog.InfoContext(ctx, "data injected successfully",
+		"taskID", req.TaskID,
+		"consignmentID", req.ConsignmentID)
+
+	WriteJSONResponse(w, http.StatusCreated, map[string]interface{}{
+		"success": true,
+		"message": "Data injected successfully",
+		"taskId":  req.TaskID,
+	})
+}
+
+// HandleGetApplications handles GET /api/oga/applications
+// Returns all applications, optionally filtered by status query parameter
+func (h *OGAHandler) HandleGetApplications(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		WriteJSONError(w, http.StatusMethodNotAllowed, "Method not allowed")
+		return
+	}
+
+	ctx := r.Context()
+	status := r.URL.Query().Get("status")
+
+	applications, err := h.service.GetApplications(ctx, status)
+	if err != nil {
+		slog.ErrorContext(ctx, "failed to get applications", "error", err)
+		WriteJSONError(w, http.StatusInternalServerError, "Failed to get applications")
+		return
+	}
+
+	WriteJSONResponse(w, http.StatusOK, applications)
 }
 
 // HandleGetApplication handles GET /api/oga/applications/{taskId}
 // Returns a specific application by task ID
 func (h *OGAHandler) HandleGetApplication(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		utils.WriteJSONError(w, http.StatusMethodNotAllowed, "Method not allowed")
+		WriteJSONError(w, http.StatusMethodNotAllowed, "Method not allowed")
 		return
 	}
 
@@ -78,24 +109,34 @@ func (h *OGAHandler) HandleGetApplication(w http.ResponseWriter, r *http.Request
 	application, err := h.service.GetApplication(ctx, taskID)
 	if err != nil {
 		if errors.Is(err, ErrApplicationNotFound) {
-			utils.WriteJSONError(w, http.StatusNotFound, "Application not found")
+			WriteJSONError(w, http.StatusNotFound, "Application not found")
 		} else {
 			slog.ErrorContext(ctx, "failed to get application",
 				"taskID", taskID,
 				"error", err)
-			utils.WriteJSONError(w, http.StatusInternalServerError, "Failed to get application")
+			WriteJSONError(w, http.StatusInternalServerError, "Failed to get application")
 		}
 		return
 	}
 
-	utils.WriteJSONResponse(w, http.StatusOK, application)
+	WriteJSONResponse(w, http.StatusOK, application)
 }
 
-// HandleApproveApplication handles POST /api/oga/applications/{taskId}/approve
-// OGA officer approves an application and submits form data
-func (h *OGAHandler) HandleApproveApplication(w http.ResponseWriter, r *http.Request) {
+// HandleHealth handles GET /health
+// Simple health check endpoint
+func (h *OGAHandler) HandleHealth(w http.ResponseWriter, r *http.Request) {
+	WriteJSONResponse(w, http.StatusOK, map[string]interface{}{
+		"status":  "ok",
+		"service": "oga-portal",
+	})
+}
+
+// HandleReviewApplication handles POST /api/oga/applications/{taskId}/review
+// Called when OGA officer approves/rejects an application
+// Sends the response back to the originating service
+func (h *OGAHandler) HandleReviewApplication(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		utils.WriteJSONError(w, http.StatusMethodNotAllowed, "Method not allowed")
+		WriteJSONError(w, http.StatusMethodNotAllowed, "Method not allowed")
 		return
 	}
 
@@ -104,87 +145,44 @@ func (h *OGAHandler) HandleApproveApplication(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	var req struct {
-		FormData     map[string]interface{} `json:"formData"`     // Complete form data (trader + OGA merged)
-		Decision     string                 `json:"decision"`     // "APPROVED" or "REJECTED"
-		ReviewerName string                 `json:"reviewerName"`
-		Comments     string                 `json:"comments"`
-	}
-
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		utils.WriteJSONError(w, http.StatusBadRequest, "Invalid request body: "+err.Error())
-		return
-	}
-
-	if req.Decision != "APPROVED" && req.Decision != "REJECTED" {
-		utils.WriteJSONError(w, http.StatusBadRequest, "decision must be APPROVED or REJECTED")
-		return
-	}
-
 	ctx := r.Context()
 
-	// Enrich form data with reviewer metadata
-	if req.FormData == nil {
-		req.FormData = make(map[string]interface{})
+	// Parse request body
+	var requestBody struct {
+		Decision      string `json:"decision"`      // "APPROVED" or "REJECTED"
+		ReviewerNotes string `json:"reviewerNotes"` // Optional notes
 	}
-	req.FormData["reviewerName"] = req.ReviewerName
-	req.FormData["comments"] = req.Comments
-	req.FormData["decision"] = req.Decision
 
-	// Call Task Manager callback with full form data
-	if h.taskManager != nil {
-		if err := h.taskManager.OnOGAFormSubmitted(ctx, taskID, req.FormData); err != nil {
-			slog.ErrorContext(ctx, "failed to notify TaskManager of OGA form submission",
+	if err := json.NewDecoder(r.Body).Decode(&requestBody); err != nil {
+		WriteJSONError(w, http.StatusBadRequest, "Invalid request body: "+err.Error())
+		return
+	}
+
+	// Validate decision
+	if requestBody.Decision != "APPROVED" && requestBody.Decision != "REJECTED" {
+		WriteJSONError(w, http.StatusBadRequest, "Decision must be either APPROVED or REJECTED")
+		return
+	}
+
+	// Process review and send response to service
+	if err := h.service.ReviewApplication(ctx, taskID, requestBody.Decision, requestBody.ReviewerNotes); err != nil {
+		if errors.Is(err, ErrApplicationNotFound) {
+			WriteJSONError(w, http.StatusNotFound, "Application not found")
+		} else {
+			slog.ErrorContext(ctx, "failed to review application",
 				"taskID", taskID,
 				"error", err)
-			utils.WriteJSONError(w, http.StatusInternalServerError, "Failed to submit form to Task Manager")
-			return
+			WriteJSONError(w, http.StatusInternalServerError, "Failed to review application: "+err.Error())
 		}
+		return
 	}
 
-	// Remove application from ready list
-	if err := h.service.RemoveApplication(ctx, taskID); err != nil {
-		slog.WarnContext(ctx, "failed to remove application from list",
-			"taskID", taskID,
-			"error", err)
-		// Don't fail the request, form is already submitted
-	}
+	slog.InfoContext(ctx, "application reviewed",
+		"taskID", taskID,
+		"decision", requestBody.Decision)
 
-	// Return success response
-	utils.WriteJSONResponse(w, http.StatusOK, map[string]interface{}{
+	WriteJSONResponse(w, http.StatusOK, map[string]interface{}{
 		"success": true,
-		"message": "Application " + req.Decision + " successfully",
-	})
-}
-
-// HandleNotification handles POST /api/oga/notifications
-// Receives notifications from Task Manager when applications are ready for review
-func (h *OGAHandler) HandleNotification(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		utils.WriteJSONError(w, http.StatusMethodNotAllowed, "Method not allowed")
-		return
-	}
-
-	var notification model.OGATaskNotification
-
-	if err := json.NewDecoder(r.Body).Decode(&notification); err != nil {
-		utils.WriteJSONError(w, http.StatusBadRequest, "Invalid request body: "+err.Error())
-		return
-	}
-
-	ctx := r.Context()
-
-	// Add application to service
-	if err := h.service.AddApplication(ctx, notification); err != nil {
-		slog.ErrorContext(ctx, "failed to add application",
-			"taskID", notification.TaskID,
-			"error", err)
-		utils.WriteJSONError(w, http.StatusInternalServerError, "Failed to add application")
-		return
-	}
-
-	utils.WriteJSONResponse(w, http.StatusOK, map[string]interface{}{
-		"success": true,
-		"message": "Application added for review",
+		"message": "Application reviewed successfully",
 	})
 }
