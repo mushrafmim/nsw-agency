@@ -166,19 +166,6 @@ func (h *OGAHandler) HandleReviewApplication(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	// Validate that decision field is present and valid
-	// TODO: Can't check from a hardcoded field, should be made configurable based on the form.
-	decision, ok := requestBody["decision"].(string)
-	if !ok || decision == "" {
-		WriteJSONError(w, http.StatusBadRequest, "Request body must contain a non-empty 'decision' string")
-		return
-	}
-
-	if decision != "APPROVED" && decision != "REJECTED" {
-		WriteJSONError(w, http.StatusBadRequest, "Invalid decision value")
-		return
-	}
-
 	// Process review and send response to service
 	if err := h.service.ReviewApplication(ctx, taskID, requestBody); err != nil {
 		if errors.Is(err, ErrApplicationNotFound) {
