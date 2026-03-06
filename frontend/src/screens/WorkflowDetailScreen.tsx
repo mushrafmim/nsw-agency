@@ -6,9 +6,11 @@ import { fetchApplicationDetail, submitReview, type OGAApplication } from '../ap
 import { JsonForms } from '@jsonforms/react';
 import { radixRenderers } from '@opennsw/jsonforms-renderers';
 import type { JsonSchema, UISchemaElement } from '@jsonforms/core';
+import { useApi } from '../services/useApi'
 
 export function WorkflowDetailScreen() {
   const navigate = useNavigate()
+  const apiClient = useApi()
 
   // Extract taskId from URL params
   const [searchParams] = useSearchParams()
@@ -22,7 +24,7 @@ export function WorkflowDetailScreen() {
 
   const [formConfig, setFormConfig] = useState<{ schema: JsonSchema; uiSchema: UISchemaElement } | null>(null)
   const [formData, setFormData] = useState<Record<string, unknown>>({})
-  const [formErrors, setFormErrors] = useState<any[]>([])
+  const [formErrors, setFormErrors] = useState<unknown[]>([])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -40,7 +42,7 @@ export function WorkflowDetailScreen() {
     setError(null)
 
     try {
-      await submitReview(taskId, formData)
+      await submitReview(apiClient, taskId, formData)
       setSuccess(true)
       setTimeout(() => navigate('/workflows'), 2000)
     } catch (err) {
@@ -59,7 +61,7 @@ export function WorkflowDetailScreen() {
       }
 
       try {
-        const data = await fetchApplicationDetail(taskId)
+        const data = await fetchApplicationDetail(apiClient, taskId)
         setApplication(data)
         setFormConfig({ schema: data.form.schema, uiSchema: data.form.uiSchema })
       } catch (err) {
@@ -71,7 +73,7 @@ export function WorkflowDetailScreen() {
     }
 
     void fetchData()
-  }, [taskId])
+  }, [apiClient, taskId])
 
 
   if (loading) {
@@ -273,13 +275,15 @@ export function WorkflowDetailScreen() {
               <div className="border-t border-gray-100 my-4"></div>
 
               {formConfig && (
-                <form onSubmit={handleSubmit} noValidate>
+                <form onSubmit={(event) => {
+                  void handleSubmit(event)
+                }} noValidate>
                   <JsonForms
                     schema={formConfig.schema}
                     uischema={formConfig.uiSchema}
                     data={formData}
                     renderers={radixRenderers}
-                    onChange={({ data, errors }) => {
+                    onChange={({ data, errors }: { data: Record<string, unknown>; errors?: unknown[] }) => {
                       setFormData(data);
                       setFormErrors(errors || []);
                     }}
