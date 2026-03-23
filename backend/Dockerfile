@@ -14,20 +14,18 @@ LABEL org.opencontainers.image.source="https://github.com/OpenNSW/nsw"
 LABEL org.opencontainers.image.description="NSW OGA Backend Service"
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates wget \
-    && rm -rf /var/lib/apt/lists/* \
-    && useradd -r -s /bin/false -d /app appuser
+  && apt-get install -y --no-install-recommends ca-certificates wget \
+  && rm -rf /var/lib/apt/lists/* \
+  && useradd -r -s /bin/false -d /app appuser \
+  && mkdir -p /app /data \
+  && chown -R appuser:appuser /data /app
 
 WORKDIR /app
 
 COPY --from=builder /out/oga /app/oga
 COPY --from=builder /app/data/forms /app/data/forms
 
-# SQLite databases are stored here; mount a volume for persistence
-RUN mkdir -p /data && chown appuser:appuser /data
-VOLUME /data
-ENV OGA_DB_PATH=/data/oga_applications.db
-
+# Runtime settings
 USER appuser
 
 # Default port (override via OGA_PORT env var)
