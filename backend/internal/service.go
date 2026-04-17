@@ -66,10 +66,11 @@ type Application struct {
 	TaskID          string           `json:"taskId"`
 	WorkflowID      string           `json:"workflowId"`
 	ServiceURL      string           `json:"serviceUrl"`
-	Data            map[string]any   `json:"data"`
+	Data            map[string]any   `json:"data"`                    // Data from NSW service to be rendered in the UI
+	OgaActionData   map[string]any   `json:"ogaActionData,omitempty"` // Copy of the payload sent back to the NSW after review, for display in the UI
 	Meta            *Meta            `json:"meta,omitempty"`
-	Form            json.RawMessage  `json:"form,omitempty"`
-	OgaForm         json.RawMessage  `json:"ogaForm,omitempty"`
+	DataForm        json.RawMessage  `json:"dataForm,omitempty"` // Schema for rendering the data in Read Only mode in the UI
+	OgaForm         json.RawMessage  `json:"ogaForm,omitempty"`  // Schema for rendering the OGA Action form in the UI
 	Status          string           `json:"status"`
 	FeedbackHistory []feedback.Entry `json:"feedbackHistory,omitempty"`
 	ReviewedAt      *time.Time       `json:"reviewedAt,omitempty"`
@@ -265,6 +266,7 @@ func (s *ogaService) GetApplication(ctx context.Context, taskID string) (*Applic
 		WorkflowID:      record.WorkflowID,
 		ServiceURL:      record.ServiceURL,
 		Data:            record.Data,
+		OgaActionData:   record.ReviewerResponse,
 		Meta:            meta,
 		Status:          record.Status,
 		FeedbackHistory: feedbackHistoryFromRaw(record.OGAFeedbackHistory),
@@ -273,25 +275,25 @@ func (s *ogaService) GetApplication(ctx context.Context, taskID string) (*Applic
 		UpdatedAt:       record.UpdatedAt,
 	}
 
-	// Attach form: look up by meta, fall back to default
+	// Attach oga form: look up by meta, fall back to default
 	formID := FormIDFromMeta(meta)
 	if formID != "" {
-		if form, err := s.formStore.GetForm(formID); err == nil {
-			app.Form = form
+		if ogaForm, err := s.formStore.GetForm(formID); err == nil {
+			app.OgaForm = ogaForm
 		} else {
 			slog.WarnContext(ctx, "form not found for application, using default", "taskID", taskID, "formID", formID)
-			if form, err := s.formStore.GetDefaultForm(); err == nil {
-				app.Form = form
+			if ogaForm, err := s.formStore.GetDefaultForm(); err == nil {
+				app.OgaForm = ogaForm
 			}
 		}
-		// Try to load an oga form (view template)
-		ogaFormID := formID + ".view"
-		if ogaForm, err := s.formStore.GetForm(ogaFormID); err == nil {
-			app.OgaForm = ogaForm
+		// Try to load a separate "view" form for rendering the data in read-only mode in the UI, using a naming convention "{formID}.view"
+		dataViewFormID := formID + ".view"
+		if dataForm, err := s.formStore.GetForm(dataViewFormID); err == nil {
+			app.DataForm = dataForm
 		}
 	} else {
-		if form, err := s.formStore.GetDefaultForm(); err == nil {
-			app.Form = form
+		if ogaForm, err := s.formStore.GetDefaultForm(); err == nil {
+			app.OgaForm = ogaForm
 		}
 	}
 
