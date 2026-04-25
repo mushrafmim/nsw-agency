@@ -26,6 +26,9 @@ Example:
 - FCAU deployment
   - `VITE_INSTANCE_CONFIG=fcau`
   - `VITE_IDP_CLIENT_ID=OGA_PORTAL_APP_FCAU`
+- CDA deployment
+  - `VITE_INSTANCE_CONFIG=cda`
+  - `VITE_IDP_CLIENT_ID=OGA_PORTAL_APP_CDA`
 
 This allows IdP-level user access restriction per OGA app registration.
 
