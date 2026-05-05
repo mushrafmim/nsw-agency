@@ -1,4 +1,4 @@
-package internal
+package storage
 
 import (
 	"context"
@@ -18,7 +18,7 @@ func TestService_CreateUploadURL(t *testing.T) {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{"key":"123-abc", "upload_url":"http://test/upload"}`))
+		w.Write([]byte(`{"key":"123-abc", "name":"test.txt", "upload_url":"http://test/upload"}`))
 	})
 
 	server := httptest.NewServer(mux)
@@ -28,21 +28,25 @@ func TestService_CreateUploadURL(t *testing.T) {
 		WithBaseURL(server.URL + "/").
 		Build()
 
-	service := NewOGAService(nil, nil, client)
+	service := NewService(client)
 
-	payload := []byte(`{"filename":"test.txt","mime_type":"text/plain","size":123}`)
+	req := UploadRequest{
+		Filename: "test.txt",
+		MimeType: "text/plain",
+		Size:     123,
+	}
 	ctx := context.Background()
 
-	result, err := service.CreateUploadURL(ctx, payload)
+	result, err := service.CreateUploadURL(ctx, req)
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
 
-	if result["key"] != "123-abc" {
-		t.Errorf("expected key '123-abc', got %v", result["key"])
+	if result.Key != "123-abc" {
+		t.Errorf("expected key '123-abc', got %v", result.Key)
 	}
-	if result["upload_url"] != "http://test/upload" {
-		t.Errorf("expected upload_url 'http://test/upload', got %v", result["upload_url"])
+	if result.UploadURL != "http://test/upload" {
+		t.Errorf("expected upload_url 'http://test/upload', got %v", result.UploadURL)
 	}
 }
 
@@ -65,7 +69,7 @@ func TestService_GetDownloadURL(t *testing.T) {
 		WithBaseURL(server.URL + "/").
 		Build()
 
-	service := NewOGAService(nil, nil, client)
+	service := NewService(client)
 	ctx := context.Background()
 
 	metadata, err := service.GetDownloadURL(ctx, "550e8400-e29b-41d4-a716-446655440000.pdf")
@@ -73,10 +77,10 @@ func TestService_GetDownloadURL(t *testing.T) {
 		t.Fatalf("expected no error, got %v", err)
 	}
 
-	if metadata["download_url"] != "http://test/download" {
-		t.Errorf("expected download_url 'http://test/download', got %v", metadata["download_url"])
+	if metadata.DownloadURL != "http://test/download" {
+		t.Errorf("expected download_url 'http://test/download', got %v", metadata.DownloadURL)
 	}
-	if metadata["expires_at"] != float64(1234567890) {
-		t.Errorf("expected expires_at 1234567890, got %v", metadata["expires_at"])
+	if metadata.ExpiresAt != 1234567890 {
+		t.Errorf("expected expires_at 1234567890, got %v", metadata.ExpiresAt)
 	}
 }
