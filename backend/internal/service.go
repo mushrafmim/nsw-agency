@@ -9,8 +9,8 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/OpenNSW/nsw/oga/internal/feedback"
-	"github.com/OpenNSW/nsw/oga/pkg/httpclient"
+	"github.com/OpenNSW/nsw-agency/backend/internal/feedback"
+	"github.com/OpenNSW/nsw-agency/backend/pkg/httpclient"
 	"gorm.io/gorm"
 )
 

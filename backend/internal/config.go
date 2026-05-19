@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/OpenNSW/nsw/oga/internal/database"
+	"github.com/OpenNSW/nsw-agency/backend/internal/database"
 )
 
 type NSWConfig struct {

@@ -11,10 +11,10 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/OpenNSW/nsw/oga/internal"
-	"github.com/OpenNSW/nsw/oga/internal/feedback"
-	"github.com/OpenNSW/nsw/oga/internal/storage"
-	"github.com/OpenNSW/nsw/oga/pkg/httpclient"
+	"github.com/OpenNSW/nsw-agency/backend/internal"
+	"github.com/OpenNSW/nsw-agency/backend/internal/feedback"
+	"github.com/OpenNSW/nsw-agency/backend/internal/storage"
+	"github.com/OpenNSW/nsw-agency/backend/pkg/httpclient"
 )
 
 func main() {

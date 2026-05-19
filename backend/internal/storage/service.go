@@ -9,7 +9,7 @@ import (
 	"net/http"
 	"net/url"
 
-	"github.com/OpenNSW/nsw/oga/pkg/httpclient"
+	"github.com/OpenNSW/nsw-agency/backend/pkg/httpclient"
 )
 
 // UploadRequest represents the payload sent by the frontend to initiate a file upload.

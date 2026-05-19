@@ -11,7 +11,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/OpenNSW/nsw/oga/pkg/httpclient"
+	"github.com/OpenNSW/nsw-agency/backend/pkg/httpclient"
 )
 
 // ---------- service test harness ----------

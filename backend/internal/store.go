@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/OpenNSW/nsw/oga/internal/database"
-	"github.com/OpenNSW/nsw/oga/internal/feedback"
+	"github.com/OpenNSW/nsw-agency/backend/internal/database"
+	"github.com/OpenNSW/nsw-agency/backend/internal/feedback"
 	"gorm.io/gorm"
 )
 

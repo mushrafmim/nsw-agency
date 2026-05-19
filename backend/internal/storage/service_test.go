@@ -6,7 +6,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/OpenNSW/nsw/oga/pkg/httpclient"
+	"github.com/OpenNSW/nsw-agency/backend/pkg/httpclient"
 )
 
 func TestService_CreateUploadURL(t *testing.T) {

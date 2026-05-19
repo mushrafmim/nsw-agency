@@ -10,7 +10,7 @@ RUN go build -o /out/oga ./cmd/server
 
 FROM debian:bookworm-slim
 
-LABEL org.opencontainers.image.source="https://github.com/OpenNSW/nsw"
+LABEL org.opencontainers.image.source="https://github.com/OpenNSW/nsw-agency"
 LABEL org.opencontainers.image.description="NSW OGA Backend Service"
 
 RUN apt-get update \
