@@ -28,7 +28,7 @@ export interface UploadResponse {
 }
 
 export async function uploadFile(apiClient: ApiClient, file: File): Promise<UploadResponse> {
-  const metadata = await apiClient.post<UploadMetadataRequest, UploadMetadataResponse>('/api/oga/uploads', {
+  const metadata = await apiClient.post<UploadMetadataRequest, UploadMetadataResponse>('/api/oga/storage', {
     filename: file.name,
     mime_type: file.type || 'application/octet-stream',
     size: file.size,
@@ -53,7 +53,7 @@ export async function uploadFile(apiClient: ApiClient, file: File): Promise<Uplo
 }
 
 export async function getDownloadUrl(apiClient: ApiClient, key: string): Promise<{ url: string; expiresAt: number }> {
-  const response = await apiClient.get<DownloadMetadataResponse>(`/api/oga/uploads/${key}`)
+  const response = await apiClient.get<DownloadMetadataResponse>(`/api/oga/storage/${key}`)
 
   // Normalize the URL if it's a relative path (common in local dev)
   const url = response.download_url.startsWith('/')
