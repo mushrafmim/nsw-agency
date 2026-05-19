@@ -1,0 +1,66 @@
+name: Backend CI
+
+on:
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'backend/**'
+      - '.github/workflows/backend-ci.yml'
+
+jobs:
+  quality-gate:
+    name: Quality Gate
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: './backend/go.mod'
+          cache-dependency-path: backend/go.sum
+          cache: true
+
+      - name: Verify go.mod
+        run: |
+          go mod tidy
+          git diff --exit-code go.mod go.sum
+
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v7
+        with:
+          version: v2.4.0
+          working-directory: ./backend
+          args: --timeout=5m
+
+  test-and-security:
+    name: Test & Security
+    needs: quality-gate
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: './backend/go.mod'
+          cache-dependency-path: backend/go.sum
+          cache: true
+
+      - name: Run Tests (includes build)
+        run: |
+          go test -v -race -coverprofile=coverage.out -covermode=atomic ./...
+
+      - name: Upload coverage
+        uses: codecov/codecov-action@v4
+        with:
+          file: ./backend/coverage.out
+          flags: backend
+        continue-on-error: true
+
+      - name: Run Gosec
+        uses: securego/gosec@master
+        with:
+          args: -no-fail -fmt sarif -out results.sarif ./...

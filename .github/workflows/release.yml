@@ -1,0 +1,269 @@
+name: Release - Build and Publish OGA Images
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release (without leading v)'
+        required: true
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  build-and-publish:
+    name: Build and Publish - ${{ matrix.service_name }}
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+      security-events: write
+      id-token: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - service_name: OGA Backend
+            image_name: oga-backend
+            context: ./backend
+            dockerfile: ./backend/Dockerfile
+            description: NSW OGA Backend Service
+
+          - service_name: OGA Portal
+            image_name: oga-app
+            context: ./frontend
+            dockerfile: ./frontend/Dockerfile
+            description: NSW OGA Officer Portal Frontend
+
+    env:
+      GIT_COMMIT: ${{ github.sha }}
+
+    outputs:
+      release_enabled: ${{ steps.release-mode.outputs.enabled }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set build time
+        id: build-time
+        run: |
+          TIMESTAMP="${{ github.event.repository.pushed_at }}"
+          if [ -z "$TIMESTAMP" ]; then
+            TIMESTAMP=$(date -u +'%Y-%m-%dT%H:%M:%SZ')
+          fi
+          echo "build_time=${TIMESTAMP}" >> "$GITHUB_OUTPUT"
+
+      - name: Determine release mode
+        id: release-mode
+        run: |
+          if [[ "${{ github.event_name }}" == "push" && "${{ github.ref }}" == refs/tags/* ]] || \
+             [[ "${{ github.event_name }}" == "workflow_dispatch" && -n "${{ github.event.inputs.version }}" ]]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        if: steps.release-mode.outputs.enabled == 'true'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+          else
+            VERSION="${GITHUB_REF#refs/tags/}"
+          fi
+          VERSION="${VERSION#v}"
+          echo "tag=${VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Convert repository owner to lowercase
+        id: repo_owner
+        run: echo "owner=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ steps.repo_owner.outputs.owner }}/${{ matrix.image_name }}
+          tags: |
+            type=semver,pattern={{version}},enable=${{ github.event_name == 'push' }}
+            type=semver,pattern={{major}}.{{minor}},enable=${{ github.event_name == 'push' }}
+            type=semver,pattern={{major}},enable=${{ github.event_name == 'push' }}
+            type=raw,value=${{ steps.version.outputs.tag }},enable=${{ github.event_name == 'workflow_dispatch' }}
+            type=raw,value=latest,enable=${{ steps.release-mode.outputs.enabled == 'true' }}
+            type=sha,format=long
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.description=${{ matrix.description }}
+            org.opencontainers.image.licenses=Apache-2.0
+            org.opencontainers.image.version=${{ steps.version.outputs.tag }}
+            org.opencontainers.image.revision=${{ env.GIT_COMMIT }}
+            org.opencontainers.image.created=${{ steps.build-time.outputs.build_time }}
+
+      - name: Build and publish image
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.dockerfile }}
+          push: ${{ steps.release-mode.outputs.enabled == 'true' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          provenance: mode=max
+          sbom: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Save image digest
+        if: steps.release-mode.outputs.enabled == 'true' && steps.build.outputs.digest != ''
+        run: |
+          mkdir -p /tmp/digests
+          echo '${{ steps.build.outputs.digest }}' > /tmp/digests/${{ matrix.image_name }}.txt
+
+      - name: Upload digest artifact
+        if: steps.release-mode.outputs.enabled == 'true' && steps.build.outputs.digest != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: digest-${{ matrix.image_name }}
+          path: /tmp/digests/${{ matrix.image_name }}.txt
+          retention-days: 1
+
+      - name: Setup Trivy
+        if: steps.release-mode.outputs.enabled == 'true'
+        uses: aquasecurity/setup-trivy@e6c2c5e321ed9123bda567646e2f96565e34abe1
+        with:
+          version: v0.69.3
+
+      - name: Run Trivy vulnerability scanner
+        id: trivy-scan
+        if: steps.release-mode.outputs.enabled == 'true'
+        run: |
+          trivy image \
+            --severity HIGH,CRITICAL \
+            --ignore-unfixed \
+            --format sarif \
+            --output "trivy-${{ matrix.image_name }}.sarif" \
+            --exit-code 1 \
+            "${{ fromJSON(steps.meta.outputs.json).tags[0] }}"
+
+      - name: Upload Trivy results
+        if: always() && steps.trivy-scan.outcome == 'success'
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: trivy-${{ matrix.image_name }}.sarif
+
+  collate-digests:
+    name: Collate Image Digests
+    runs-on: ubuntu-latest
+    needs: build-and-publish
+    if: needs.build-and-publish.outputs.release_enabled == 'true'
+    outputs:
+      version: ${{ steps.version.outputs.tag }}
+      is_prerelease: ${{ steps.version.outputs.is_prerelease }}
+    steps:
+      - name: Determine version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+          else
+            VERSION="${GITHUB_REF#refs/tags/}"
+          fi
+          VERSION="${VERSION#v}"
+          echo "tag=${VERSION}" >> "$GITHUB_OUTPUT"
+          if [[ "${VERSION}" == *-* ]]; then
+            echo "is_prerelease=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "is_prerelease=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Download all digest artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: digest-*
+          path: /tmp/digests
+          merge-multiple: true
+
+      - name: Build release-digests.json
+        run: |
+          echo "{" > release-digests.json
+          FIRST=true
+          for FILE in /tmp/digests/*.txt; do
+            IMAGE_NAME=$(basename "$FILE" .txt)
+            DIGEST=$(cat "$FILE")
+            if [ "$FIRST" = true ]; then
+              FIRST=false
+            else
+              echo "," >> release-digests.json
+            fi
+            echo "  \"${IMAGE_NAME}\": \"${DIGEST}\"" >> release-digests.json
+          done
+          echo "}" >> release-digests.json
+
+      - name: Upload collated digests
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-digests
+          path: release-digests.json
+          retention-days: 1
+
+  create-release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    needs: collate-digests
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download collated digests
+        uses: actions/download-artifact@v4
+        with:
+          name: release-digests
+          path: .
+
+      - name: Create git tag (workflow_dispatch only)
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          TAG="v${{ needs.collate-digests.outputs.version }}"
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          if ! git rev-parse "$TAG" >/dev/null 2>&1; then
+            git tag "$TAG"
+            git push origin "$TAG"
+          fi
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event_name == 'workflow_dispatch' && format('v{0}', needs.collate-digests.outputs.version) || github.ref }}
+          name: Release ${{ needs.collate-digests.outputs.version }}
+          body: |
+            ## Release ${{ needs.collate-digests.outputs.version }}
+
+            ### Published Image Targets
+            - `${{ env.REGISTRY }}/${{ github.repository }}/oga-backend:${{ needs.collate-digests.outputs.version }}`
+            - `${{ env.REGISTRY }}/${{ github.repository }}/oga-app:${{ needs.collate-digests.outputs.version }}`
+
+            ### Image Digests
+            See `release-digests.json` attached to this release.
+          draft: false
+          prerelease: ${{ needs.collate-digests.outputs.is_prerelease == 'true' }}
+          files: release-digests.json
