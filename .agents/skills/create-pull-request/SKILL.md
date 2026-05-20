@@ -18,7 +18,7 @@ Use this skill when:
 1. **Verify Git State:**
    - Run `git status` to ensure all changes are committed.
    - Run `git branch --show-current` to identify the current branch name.
-   - Detect the base branch dynamically by running `git remote show origin | grep 'HEAD branch'`, then run `git diff <base-branch>...HEAD` (e.g., `main`, `master`, or whichever the default branch is) to see exactly what changes are being introduced.
+   - Detect the base branch dynamically by running `gh repo view --json defaultBranchRef --template '{{.defaultBranchRef.name}}'`, then run `git diff <base-branch>...HEAD` (e.g., `main`, `master`, or whichever the default branch is) to see exactly what changes are being introduced.
 
 2. **Retrieve the Pull Request Template:**
    - Read the template from [.github/pull_request_template.md](file:///.github/pull_request_template.md).
@@ -48,8 +48,8 @@ Use this skill when:
    - Push the local branch to the remote repository (`git push -u origin <branch-name>`).
    - Use the GitHub CLI to create the pull request:
      ```bash
-     gh pr create --title "<PR Title>" --body-file .pr-body.md
-     ```
+      gh pr create --title "<PR Title>" --body-file .pr-body.md --base "<base-branch>" --head "<current-branch>"
+      ```
    - *Optional:* If requested by the user or if changes are incomplete, add the `--draft` flag.
 
 6. **Cleanup & Verification:**
