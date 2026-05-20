@@ -56,13 +56,26 @@ Use this skill when:
 4. **Write the PR Body:**
    - Save the filled-in template to a temporary markdown file (e.g., `.pr-body.md`). Do **not** place this file inside the `.git` directory, which is reserved for internal Git metadata.
 
-5. **Execute PR Creation:**
-   - Push the local branch to the remote repository (`git push -u origin <branch-name>`).
-   - Use the GitHub CLI to create the pull request:
-     ```bash
-      gh pr create --title "<PR Title>" --body-file .pr-body.md --base "<base-branch>" --head "<current-branch>"
-      ```
-   - *Optional:* If requested by the user or if changes are incomplete, add the `--draft` flag.
+5. **Confirm and Create the Pull Request:**
+   - **User Review & Confirmation**:
+     - Present the generated PR Title and Body to the user in the chat interface.
+     - Explicitly ask the user: *"Should I proceed with creating this Pull Request?"*
+     - Do not execute the creation command until the user provides confirmation.
+   - **Autonomous / Non-interactive Mode**:
+     - If the agent is running in an autonomous background context where user interaction is unavailable, default to creating a **Draft Pull Request** (by appending the `--draft` flag) to prevent triggering notifications to reviewers prematurely.
+   - **Execution**:
+     - Push the local branch to the remote repository:
+       ```bash
+       git push -u origin <branch-name>
+       ```
+     - Run the GitHub CLI command to create the pull request:
+       ```bash
+       # For normal PR creation (after user confirmation)
+       gh pr create --title "<PR Title>" --body-file .pr-body.md --base "<base-branch>" --head "<current-branch>"
+
+       # For autonomous/draft fallback
+       gh pr create --draft --title "<PR Title>" --body-file .pr-body.md --base "<base-branch>" --head "<current-branch>"
+       ```
 
 6. **Cleanup & Verification:**
    - Remove the temporary `.pr-body.md` file.
