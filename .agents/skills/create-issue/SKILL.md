@@ -1,11 +1,23 @@
 ---
 name: create-issue
-description: Create a GitHub issue for the repository by selecting the appropriate issue template (bug report, documentation, feature request, or improvement request), filling in the relevant fields, and submitting via the GitHub CLI.
+description: Create a GitHub issue for the repository by selecting the appropriate template (bug report, docs request, feature request, or improvement request) and submitting via the GitHub CLI. Use when the user asks to create, file, open, or raise an issue, or wants to report a bug, request a feature, suggest an improvement, or request a docs update.
 ---
 
 # Create Issue Skill
 
 This skill guides the agent to create a GitHub issue using one of the repository's official issue templates located in [.github/ISSUE_TEMPLATE/](file:///.github/ISSUE_TEMPLATE/).
+
+## Prerequisites & Requirements
+
+> [!IMPORTANT]
+> **Tool Requirements**: This skill requires terminal execution permissions (specifically running command-line tools like `gh` and `git`) and the ability to write temporary files to the workspace root. It will not work in environment configurations where command execution or file writes are restricted.
+
+### Preflight Checks
+Before running any other steps, perform these checks in the terminal:
+1. Run `gh --version` to verify the GitHub CLI is installed.
+2. Run `gh auth status` to check if you are authenticated with GitHub.
+
+*Fallback Note*: If `gh` is not installed or you are not authenticated, notify the user immediately and ask them to install the GitHub CLI or run `gh auth login` in their terminal.
 
 ## Available Templates
 

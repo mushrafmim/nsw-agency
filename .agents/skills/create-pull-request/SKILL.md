@@ -1,11 +1,23 @@
 ---
 name: create-pull-request
-description: Create a GitHub pull request for the repository using the repository's standard pull request template.
+description: Create a GitHub pull request (PR) for the repository using its standard template. Use when the user requests to create a PR, asks to submit or publish code changes to GitHub, or code changes are committed and ready to be pushed/submitted.
 ---
 
 # Create Pull Request Skill
 
 This skill guides the agent to create a GitHub pull request using the repository's official pull request template ([pull_request_template.md](file:///.github/pull_request_template.md)).
+
+## Prerequisites & Requirements
+
+> [!IMPORTANT]
+> **Tool Requirements**: This skill requires terminal execution permissions (specifically running command-line tools like `gh` and `git`) and the ability to write temporary files to the workspace root. It will not work in environment configurations where command execution or file writes are restricted.
+
+### Preflight Checks
+Before running any other steps, perform these checks in the terminal:
+1. Run `gh --version` to verify the GitHub CLI is installed.
+2. Run `gh auth status` to check if you are authenticated with GitHub.
+
+*Fallback Note*: If `gh` is not installed or you are not authenticated, notify the user immediately and ask them to install the GitHub CLI or run `gh auth login` in their terminal.
 
 ## Trigger Conditions
 Use this skill when:
