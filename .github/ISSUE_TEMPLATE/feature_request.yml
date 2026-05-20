@@ -1,6 +1,6 @@
 name: "💡 New Feature Request"
-description: "Create new issue in OpenNSW/nsw-agency: 💡 New Feature Request"
-labels: ["Type/New Feature"]
+description: "Create new issue: 💡 New Feature Request"
+labels: ["Type/Feature"]
 body:
   - type: textarea
     id: problem
