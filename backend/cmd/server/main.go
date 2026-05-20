@@ -11,7 +11,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/OpenNSW/nsw-agency/backend/internal"
+	"github.com/OpenNSW/nsw-agency/backend/internal/application"
 	"github.com/OpenNSW/nsw-agency/backend/internal/config"
 	"github.com/OpenNSW/nsw-agency/backend/internal/feedback"
 	"github.com/OpenNSW/nsw-agency/backend/internal/form"
@@ -34,7 +34,7 @@ func main() {
 	)
 
 	// Initialize database store
-	store, err := internal.NewApplicationStore(cfg)
+	store, err := application.NewApplicationStore(cfg)
 	if err != nil {
 		log.Fatalf("failed to create application store: %v", err)
 	}
@@ -66,7 +66,7 @@ func main() {
 		Build()
 
 	// Initialize OGA service
-	service := internal.NewOGAService(store, configStore, formStore, nswHttpClient)
+	service := application.NewService(store, configStore, formStore, nswHttpClient)
 	defer func() {
 		if err := service.Close(); err != nil {
 			slog.Error("failed to close service", "error", err)
@@ -74,9 +74,10 @@ func main() {
 	}()
 
 	// Initialize handlers
-	handler, err := internal.NewOGAHandler(service, cfg.MaxRequestBytes)
+	handler, err := application.NewHandler(service, cfg.MaxRequestBytes)
 	if err != nil {
-		log.Fatalf("failed to create OGA handler: %v", err)
+		slog.Error("failed to create OGA handler", "error", err)
+		return
 	}
 
 	// Initialize storage service and handler
