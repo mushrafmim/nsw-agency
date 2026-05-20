@@ -77,14 +77,21 @@ If the context is ambiguous, present the four options and ask the user to choose
 ### Step 4: Write the Issue Body File
 Save the filled-in body (without the YAML frontmatter — plain markdown only) to a temporary file, e.g. `issue-body.md` at the workspace root.
 
-### Step 5: Create the Issue
-Run:
-```bash
-gh issue create \
-  --title "<Concise, action-oriented title>" \
-  --label "<confirmed-label-from-step-1>" \
-  --body-file issue-body.md
-```
+### Step 5: Confirm and Create the Issue
+- **User Review & Confirmation**:
+  - Present the generated Issue Title, Label, and Body to the user in the chat interface.
+  - Explicitly ask the user: *"Should I proceed with creating this GitHub issue?"*
+  - Do not execute the CLI command until the user provides explicit confirmation.
+- **Autonomous / Non-interactive Mode**:
+  - If running in an autonomous background context where user response is unavailable, the agent **must not** create the issue automatically. Instead, save the proposed title, label, and body to a file (e.g. `proposed-issue.md`), notify the user of its location, and halt execution until the user manually triggers or approves it.
+- **Execution**:
+  - Once confirmed, run the GitHub CLI command:
+    ```bash
+    gh issue create \
+      --title "<Concise, action-oriented title>" \
+      --label "<confirmed-label-from-step-1>" \
+      --body-file issue-body.md
+    ```
 
 ### Step 6: Cleanup
 - Delete the temporary `issue-body.md` file after the issue is created.
