@@ -4,7 +4,7 @@
 # Usage:
 #   ./start-dev.sh <agency> [target]
 #
-#   <agency>  One of: npqs, fcau, ird, cda, default, all
+#   <agency>  One of: npqs, fcau, ird, cda, all
 #             'all' fans out and starts every agency in parallel.
 #   [target]  One of: all (default), backend, frontend
 #
@@ -33,13 +33,13 @@ set -euo pipefail
 # group leader — that lets us kill `go run`'s grandchild binary on cleanup.
 set -m
 
-# Single source of truth for per-agency config: "BE_PORT|FE_PORT|IDP_CLIENT_ID|NSW_CLIENT_ID".
+# Single source of truth for per-agency config: "BE_PORT|FE_PORT|IDP_CLIENT_ID|NSW_CLIENT_ID|APP_NAME".
 # Adding an agency means one line here — nothing else.
 # (Scalar vars rather than `declare -A` so this works on stock macOS bash 3.2.)
-CONFIG_npqs="8081|5174|OGA_PORTAL_APP_NPQS|NPQS_TO_NSW"
-CONFIG_fcau="8082|5175|OGA_PORTAL_APP_FCAU|FCAU_TO_NSW"
-CONFIG_ird="8083|5176|OGA_PORTAL_APP_IRD|IRD_TO_NSW"
-CONFIG_cda="8084|5177|OGA_PORTAL_APP_CDA|CDA_TO_NSW"
+CONFIG_npqs="8081|5174|OGA_PORTAL_APP_NPQS|NPQS_TO_NSW|National Plant Quarantine Service (NPQS)"
+CONFIG_fcau="8082|5175|OGA_PORTAL_APP_FCAU|FCAU_TO_NSW|Food Control Administration Unit (FCAU)"
+CONFIG_ird="8083|5176|OGA_PORTAL_APP_IRD|IRD_TO_NSW|Inland Revenue Department (IRD)"
+CONFIG_cda="8084|5177|OGA_PORTAL_APP_CDA|CDA_TO_NSW|Coconut Development Authority (CDA)"
 
 # Agencies (every CONFIG_* ), alphabetised for predictable launch order in 'all' mode
 #  Derived from the config above so adding an agency only requires editing the CONFIG_* block.
@@ -55,7 +55,7 @@ usage() {
   cat <<EOF >&2
 Usage: $0 <agency> [target]
 
-  <agency>  One of: ${ALL_AGENCIES[*]}, default, all
+  <agency>  One of: ${ALL_AGENCIES[*]}, all
   [target]  One of: all (default), backend, frontend
 
 Examples:
@@ -109,10 +109,11 @@ resolve_agency() {
   local varname="CONFIG_$1"
   local config="${!varname:-}"
   if [[ -z "$config" ]]; then
-    echo "Unknown agency '$1'. Expected: ${ALL_AGENCIES[*]}, default, all." >&2
+    echo "Unknown agency '$1'. Expected: ${ALL_AGENCIES[*]}, all." >&2
     return 1
   fi
-  IFS='|' read -r BE_PORT FE_PORT IDP_CLIENT_ID NSW_CLIENT_ID <<<"$config"
+  IFS='|' read -r BE_PORT FE_PORT IDP_CLIENT_ID NSW_CLIENT_ID APP_NAME <<<"$config"
+  APP_NAME="${APP_NAME:-$1}"
 }
 
 # Source a .env file without clobbering vars already set in the environment.
@@ -134,6 +135,29 @@ source_env_nonclobber() {
   done <"$file"
 }
 
+ensure_branding_file() {
+  local agency=$1 app_name=$2
+  local config_dir="$ROOT_DIR/frontend/public/configs"
+  local file="$config_dir/${agency}.branding.json"
+  mkdir -p "$config_dir"
+  cat >"$file" <<EOF
+{
+  "branding": {
+    "systemName": "NSW",
+    "appName": "${app_name}",
+    "logoUrl": "",
+    "systemLogoUrl": "",
+    "favicon": "",
+    "portalName": "",
+    "description": "",
+    "heroImageUrl": "",
+    "partnerLogos": [{"url": "", "alt": ""}]
+  }
+}
+EOF
+  echo "[start-dev] Wrote branding file: $file"
+}
+
 start_backend() {
   local agency=$1
   resolve_agency "$agency"
@@ -147,7 +171,7 @@ start_backend() {
     export PORT="${PORT:-$BE_PORT}"
     export DB_DRIVER="${DB_DRIVER:-sqlite}"
     export DB_PATH="${DB_PATH:-./${agency}_applications.db}"
-    export NSW_CLIENT_ID="${NSW_CLIENT_ID:-$NSW_CLIENT_ID}"
+    export NSW_CLIENT_ID
     # The Go server does not autoload .env — source it (non-clobber) so
     # NSW_* vars (API base URL, OAuth client secret, token URL) reach
     # the process without overriding anything already set above.
@@ -168,6 +192,7 @@ start_frontend() {
   (
     cd "$FRONTEND_DIR"
     # Vite autoloads frontend/.env but only reads VITE_PORT from process env.
+    ensure_branding_file "$agency" "$APP_NAME"
     VITE_PORT="${VITE_PORT:-$FE_PORT}" \
     VITE_BRANDING_NAME="${VITE_BRANDING_NAME:-$agency}" \
     VITE_API_BASE_URL="${VITE_API_BASE_URL:-http://localhost:$BE_PORT}" \
