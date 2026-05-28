@@ -9,7 +9,9 @@
 #   [target]  One of: all (default), backend, frontend
 #
 # Flags:
-#   --clean-run       Wipe agency database(s) before starting.
+#   --clean-run       Wipe agency database(s) before starting, then run
+#                     migrations (go run ./cmd/migrate up) so the schema is
+#                     applied before the server starts.
 #                     SQLite: deletes {agency}_applications.db files.
 #                     Postgres: drops and recreates the database.
 #   --env-file=PATH   Load additional env vars (non-clobbering) before
@@ -69,7 +71,7 @@ Usage: $0 [--clean-run] [--env-file=PATH] <agency> [target]
   [target]  One of: all (default), backend, frontend
 
 Flags:
-  --clean-run       Wipe agency DB(s) before starting
+  --clean-run       Wipe agency DB(s) then run migrations before starting
   --env-file=PATH   Load a root-level env file (non-clobbering);
   --env-file PATH   both forms are supported
 
@@ -229,6 +231,39 @@ clean_databases() {
   fi
 }
 
+# run_migrations: apply all pending migrations for each agency DB.
+#   Runs `go run ./cmd/migrate up` from BACKEND_DIR with the same DB_DRIVER /
+#   DB_PATH values that start_backend uses, so the schema is ready before the
+#   server starts.  Called automatically after clean_databases on --clean-run.
+# ---------------------------------------------------------------------------
+run_migrations() {
+  local agencies=("$@")
+  (
+    cd "$BACKEND_DIR"
+    # Source .env non-clobber so Postgres credentials (DB_HOST, DB_USER,
+    # DB_PASSWORD, DB_NAME, etc.) are available to the migrate binary, which
+    # does not autoload .env itself.  Parent-shell values still win.
+    if [[ -f .env ]]; then
+      source_env_nonclobber .env
+    fi
+
+    local db_driver="${DB_DRIVER:-sqlite}"
+    echo "[start-dev] Running migrations (driver: $db_driver)..."
+
+    if [[ "$db_driver" == "sqlite" ]]; then
+      for agency in "${agencies[@]}"; do
+        echo "[start-dev]   migrate up -> ${agency}_applications.db"
+        DB_DRIVER="sqlite" DB_PATH="./${agency}_applications.db" \
+          go run ./cmd/migrate up
+      done
+    else
+      # Postgres uses a single shared DB; run once.
+      echo "[start-dev]   migrate up -> ${DB_NAME:-nsw_agency_db}"
+      go run ./cmd/migrate up
+    fi
+  )
+}
+
 ensure_branding_file() {
   local agency=$1 app_name=$2
   local config_dir="$ROOT_DIR/frontend/public/configs"
@@ -266,6 +301,7 @@ start_backend() {
     export DB_DRIVER="${DB_DRIVER:-sqlite}"
     export DB_PATH="${DB_PATH:-./${agency}_applications.db}"
     export NSW_CLIENT_ID
+    export ALLOWED_ORIGINS="${ALLOWED_ORIGINS:-http://localhost:$FE_PORT}"
     # The Go server does not autoload .env — source it (non-clobber) so
     # NSW_* vars (API base URL, OAuth client secret, token URL) reach
     # the process without overriding anything already set above.
@@ -320,6 +356,7 @@ fi
 
 if [[ "$CLEAN_RUN" == "true" ]]; then
   clean_databases "${AGENCIES[@]}"
+  run_migrations "${AGENCIES[@]}"
 fi
 
 for o in "${AGENCIES[@]}"; do
