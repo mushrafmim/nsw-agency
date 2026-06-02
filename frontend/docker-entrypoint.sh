@@ -29,8 +29,17 @@ window.__APP_CONFIG__ = {
   "VITE_API_BASE_URL": "$(escape_js "${VITE_API_BASE_URL:-http://localhost:8081}")",
   "VITE_IDP_BASE_URL": "$(escape_js "${VITE_IDP_BASE_URL:-https://localhost:8090}")",
   "VITE_IDP_CLIENT_ID": "$(escape_js "${VITE_IDP_CLIENT_ID:-OGA_PORTAL_APP_NPQS}")",
+  "VITE_IDP_EXPECTED_OU_HANDLE": "$(escape_js "${VITE_IDP_EXPECTED_OU_HANDLE:-}")",
   "VITE_APP_URL": "$(escape_js "${VITE_APP_URL:-http://localhost:5174}")",
   "VITE_IDP_SCOPES": "$(escape_js "${VITE_IDP_SCOPES:-openid,profile,email}")",
   "VITE_IDP_PLATFORM": "$(escape_js "${VITE_IDP_PLATFORM:-AsgardeoV2}")"
 };
 EOF
+
+# VITE_IDP_EXPECTED_OU_HANDLE is required: the app throws when it is missing or
+# empty (getExpectedOuHandle -> getRequiredEnv), which renders a blank screen
+# after login. Warn loudly so the misconfiguration is visible in the logs.
+# Non-fatal: the login screen itself renders without it, so we still serve.
+if [ -z "${VITE_IDP_EXPECTED_OU_HANDLE:-}" ]; then
+  echo "WARNING: VITE_IDP_EXPECTED_OU_HANDLE is not set; users will hit a blank screen / authorization failure after login." >&2
+fi
