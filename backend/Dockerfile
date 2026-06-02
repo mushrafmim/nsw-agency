@@ -6,7 +6,11 @@ COPY go.mod go.sum ./
 RUN go mod download
 
 COPY . .
-RUN go build -o /out/agency ./cmd/server
+# -ldflags="-s -w" strips the symbol table and DWARF debug info to shrink the
+# binaries. Go panic traces (function + line) and pprof still work, since they
+# use the runtime pclntab rather than the symbol table.
+RUN go build -ldflags="-s -w" -o /out/agency ./cmd/server \
+  && go build -ldflags="-s -w" -o /out/migrate ./cmd/migrate
 
 FROM debian:bookworm-slim
 
@@ -23,6 +27,8 @@ RUN apt-get update \
 WORKDIR /app
 
 COPY --from=builder /out/agency /app/agency
+COPY --from=builder /out/migrate /app/migrate
+COPY --from=builder /app/migrations /app/migrations
 COPY --from=builder /app/data/forms /app/data/forms
 COPY --from=builder /app/data/task-configs /app/data/task-configs
 
