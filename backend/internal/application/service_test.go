@@ -11,15 +11,14 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/OpenNSW/nsw-agency/backend/internal/form"
-	"github.com/OpenNSW/nsw-agency/backend/internal/taskconfig"
+	"github.com/OpenNSW/nsw-agency/backend/internal/template"
 	"github.com/OpenNSW/nsw-agency/backend/pkg/httpclient"
 )
 
 // writeTaskConfigFile writes content to <root>/task-configs/<name>.
 func writeTaskConfigFile(t *testing.T, root, name, content string) {
 	t.Helper()
-	path := filepath.Join(root, taskconfig.TaskConfigsSubdir, name)
+	path := filepath.Join(root, "task-configs", name)
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatalf("failed to write %s: %v", path, err)
 	}
@@ -28,7 +27,7 @@ func writeTaskConfigFile(t *testing.T, root, name, content string) {
 // writeFormFile writes content to <root>/forms/<name>.
 func writeFormFile(t *testing.T, root, name, content string) {
 	t.Helper()
-	path := filepath.Join(root, form.FormsSubdir, name)
+	path := filepath.Join(root, "forms", name)
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatalf("failed to write %s: %v", path, err)
 	}
@@ -76,14 +75,13 @@ func newCallbackServer(t *testing.T) (*httptest.Server, *callbackCapture) {
 // serviceHarness wires the in-memory dependencies required to exercise
 // Service end-to-end against a stub callback server.
 type serviceHarness struct {
-	t           *testing.T
-	store       *ApplicationStore
-	configStore *taskconfig.TaskConfigStore
-	formStore   *form.FormStore
-	httpClient  *httpclient.Client
-	callbackURL string
-	capture     *callbackCapture
-	service     Service
+	t                *testing.T
+	store            *ApplicationStore
+	templateProvider template.Provider
+	httpClient       *httpclient.Client
+	callbackURL      string
+	capture          *callbackCapture
+	service          Service
 }
 
 // newServiceHarness constructs the harness with config and form files placed
@@ -91,11 +89,11 @@ type serviceHarness struct {
 //
 // writeFn receives the config root path and is expected to populate
 // <root>/task-configs/ and <root>/forms/ as needed.
-func newServiceHarness(t *testing.T, writeFn func(root string), defaultConfigID string) *serviceHarness {
+func newServiceHarness(t *testing.T, writeFn func(root string)) *serviceHarness {
 	t.Helper()
 
 	root := t.TempDir()
-	for _, sub := range []string{taskconfig.TaskConfigsSubdir, form.FormsSubdir} {
+	for _, sub := range []string{"task-configs", "forms"} {
 		if err := os.MkdirAll(filepath.Join(root, sub), 0o755); err != nil {
 			t.Fatalf("failed to create %s dir: %v", sub, err)
 		}
@@ -106,31 +104,25 @@ func newServiceHarness(t *testing.T, writeFn func(root string), defaultConfigID 
 
 	store := newTestStore(t)
 
-	configStore, err := taskconfig.NewTaskConfigStore(root, defaultConfigID)
-	if err != nil {
-		t.Fatalf("NewTaskConfigStore failed: %v", err)
-	}
-
-	formStore, err := form.NewFormStore(root)
-	if err != nil {
-		t.Fatalf("NewFormStore failed: %v", err)
+	loader := template.NewFileLoader(filepath.Join(root, "task-configs"), filepath.Join(root, "forms"))
+	if err := loader.Load(); err != nil {
+		t.Fatalf("FileLoader.Load failed: %v", err)
 	}
 
 	srv, capture := newCallbackServer(t)
 	hc := httpclient.NewClientBuilder().Build()
 
-	svc := NewService(store, configStore, formStore, hc)
+	svc := NewService(store, loader, hc)
 	t.Cleanup(func() { _ = svc.Close() })
 
 	return &serviceHarness{
-		t:           t,
-		store:       store,
-		configStore: configStore,
-		formStore:   formStore,
-		httpClient:  hc,
-		callbackURL: srv.URL,
-		capture:     capture,
-		service:     svc,
+		t:                t,
+		store:            store,
+		templateProvider: loader,
+		httpClient:       hc,
+		callbackURL:      srv.URL,
+		capture:          capture,
+		service:          svc,
 	}
 }
 
@@ -177,7 +169,7 @@ func TestReviewApplication_StatusFromStatusMap(t *testing.T) {
 				}
 			}
 		}`)
-	}, "")
+	})
 	h.seed("t-approve", "alpha", nil)
 	h.seed("t-reject", "alpha", nil)
 	h.seed("t-feedback", "alpha", nil)
@@ -212,7 +204,7 @@ func TestReviewApplication_DefaultsToDONE_OutcomeNotInMap(t *testing.T) {
 			"meta": {"title": "Alpha"},
 			"behavior": {"statusMap": {"approve": "APPROVED"}}
 		}`)
-	}, "")
+	})
 	h.seed("t-unknown", "alpha", nil)
 
 	err := h.service.ReviewApplication(context.Background(), "t-unknown", map[string]any{
@@ -230,7 +222,7 @@ func TestReviewApplication_DefaultsToDONE_NoStatusMap(t *testing.T) {
 	h := newServiceHarness(t, func(root string) {
 		// Config exists but defines no behavior/statusMap.
 		writeTaskConfigFile(t, root, "alpha.json", `{"meta": {"title": "Alpha"}}`)
-	}, "")
+	})
 	h.seed("t-no-map", "alpha", nil)
 
 	err := h.service.ReviewApplication(context.Background(), "t-no-map", map[string]any{
@@ -245,7 +237,7 @@ func TestReviewApplication_DefaultsToDONE_NoStatusMap(t *testing.T) {
 }
 
 func TestReviewApplication_DefaultsToDONE_NoConfig(t *testing.T) {
-	h := newServiceHarness(t, nil, "")
+	h := newServiceHarness(t, nil)
 	h.seed("t-no-config", "no-such-task", nil)
 
 	err := h.service.ReviewApplication(context.Background(), "t-no-config", map[string]any{
@@ -270,7 +262,7 @@ func TestReviewApplication_OutcomeFieldOverride(t *testing.T) {
 				"statusMap": {"pass": "APPROVED", "fail": "REJECTED"}
 			}
 		}`)
-	}, "")
+	})
 
 	t.Run("custom field hit", func(t *testing.T) {
 		h.seed("t-pass", "labs", nil)
@@ -309,7 +301,7 @@ func TestReviewApplication_CallsServiceURL(t *testing.T) {
 			"meta": {"title": "Alpha"},
 			"behavior": {"statusMap": {"approve": "APPROVED"}}
 		}`)
-	}, "")
+	})
 	h.seed("t-callback", "alpha", nil)
 
 	err := h.service.ReviewApplication(context.Background(), "t-callback", map[string]any{
@@ -353,7 +345,7 @@ func TestGetApplication_ResolvesFormReferences(t *testing.T) {
 		}`)
 		writeFormFile(t, root, "alpha_view.json", `{"schema":{"type":"object","title":"View"},"uiSchema":{"type":"VerticalLayout"}}`)
 		writeFormFile(t, root, "alpha_review.json", `{"schema":{"type":"object","title":"Review"},"uiSchema":{"type":"VerticalLayout"}}`)
-	}, "")
+	})
 	h.seed("t-1", "alpha", JSONB{"submittedField": "submittedValue"})
 
 	app, err := h.service.GetApplication(context.Background(), "t-1")
@@ -398,36 +390,26 @@ func TestGetApplication_ResolvesFormReferences(t *testing.T) {
 	}
 }
 
-func TestGetApplication_MissingFormRef_LogsAndOmits(t *testing.T) {
-	h := newServiceHarness(t, func(root string) {
-		writeTaskConfigFile(t, root, "alpha.json", `{
-			"meta": {"title": "Alpha"},
-			"forms": {"view": "missing_view", "review": "missing_review"}
-		}`)
-		// Note: neither form file exists in <root>/forms/.
-	}, "")
-	h.seed("t-no-forms", "alpha", nil)
+func TestGetApplication_MissingFormRef_FailsLoader(t *testing.T) {
+	root := t.TempDir()
+	for _, sub := range []string{"task-configs", "forms"} {
+		if err := os.MkdirAll(filepath.Join(root, sub), 0o755); err != nil {
+			t.Fatalf("failed to create %s dir: %v", sub, err)
+		}
+	}
+	writeTaskConfigFile(t, root, "alpha.json", `{
+		"meta": {"title": "Alpha"},
+		"forms": {"view": "missing_view", "review": "missing_review"}
+	}`)
 
-	app, err := h.service.GetApplication(context.Background(), "t-no-forms")
-	if err != nil {
-		t.Fatalf("GetApplication failed: %v", err)
-	}
-
-	// Metadata still attached.
-	if app.Title != "Alpha" {
-		t.Errorf("Title: got %q, want Alpha", app.Title)
-	}
-	// Form payloads must be nil since the form IDs don't resolve.
-	if app.DataForm != nil {
-		t.Errorf("expected DataForm to be nil when form ID is missing, got %s", app.DataForm)
-	}
-	if app.AgencyForm != nil {
-		t.Errorf("expected AgencyForm to be nil when form ID is missing, got %s", app.AgencyForm)
+	loader := template.NewFileLoader(filepath.Join(root, "task-configs"), filepath.Join(root, "forms"))
+	if err := loader.Load(); err == nil {
+		t.Errorf("expected Loader.Load to fail due to missing form references, but got nil")
 	}
 }
 
 func TestGetApplication_NoConfig_OmitsMetadata(t *testing.T) {
-	h := newServiceHarness(t, nil, "")
+	h := newServiceHarness(t, nil)
 	h.seed("t-orphan", "no-config-for-this", nil)
 
 	app, err := h.service.GetApplication(context.Background(), "t-orphan")
@@ -444,7 +426,7 @@ func TestGetApplication_NoConfig_OmitsMetadata(t *testing.T) {
 }
 
 func TestGetApplication_NotFound(t *testing.T) {
-	h := newServiceHarness(t, nil, "")
+	h := newServiceHarness(t, nil)
 	_, err := h.service.GetApplication(context.Background(), "does-not-exist")
 	if err != ErrApplicationNotFound {
 		t.Errorf("expected ErrApplicationNotFound, got %v", err)
