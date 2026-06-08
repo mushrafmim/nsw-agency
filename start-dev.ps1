@@ -285,7 +285,7 @@ function Run-Migrations {
         $psi = [System.Diagnostics.ProcessStartInfo]::new($shellCmd, "$shellArg `"go run ./cmd/migrate up`"")
         $psi.WorkingDirectory = $BACKEND_DIR
         $psi.UseShellExecute  = $false
-        foreach ($k in $agencyEnv.Keys) { $psi.Environment[$k] = [string]$agencyEnv[$k] }
+        foreach ($k in $agencyEnv.Keys) { $psi.EnvironmentVariables[$k] = [string]$agencyEnv[$k] }
         $proc = [System.Diagnostics.Process]::Start($psi)
         $proc.WaitForExit()
         if ($proc.ExitCode -ne 0) {
@@ -325,10 +325,22 @@ function Start-Backend {
     # DB_DRIVER falls back to sqlite only if not set by parent env, --env-file, or .env.
     if (-not $envBlock.Contains('DB_DRIVER')) { $envBlock['DB_DRIVER'] = 'sqlite' }
 
+    # Seed the database before starting
+    $seedFile = Join-Path $BACKEND_DIR "data/seed/${AgencyName}_users.json"
+    if (Test-Path $seedFile) {
+        Write-Host "[start-dev] Seeding $AgencyName database using $seedFile..."
+        $seedPsi = [System.Diagnostics.ProcessStartInfo]::new($shellCmd, "$shellArg `"go run ./cmd/seed user add --file data/seed/${AgencyName}_users.json`"")
+        $seedPsi.WorkingDirectory = $BACKEND_DIR
+        $seedPsi.UseShellExecute  = $false
+        foreach ($k in $envBlock.Keys) { $seedPsi.EnvironmentVariables[$k] = [string]$envBlock[$k] }
+        $seedProc = [System.Diagnostics.Process]::Start($seedPsi)
+        $seedProc.WaitForExit()
+    }
+
     $psi = [System.Diagnostics.ProcessStartInfo]::new($shellCmd, "$shellArg `"go run ./cmd/server`"")
     $psi.WorkingDirectory = $BACKEND_DIR
     $psi.UseShellExecute  = $false
-    foreach ($k in $envBlock.Keys) { $psi.Environment[$k] = [string]$envBlock[$k] }
+    foreach ($k in $envBlock.Keys) { $psi.EnvironmentVariables[$k] = [string]$envBlock[$k] }
     $jobs.Add([System.Diagnostics.Process]::Start($psi))
 }
 
@@ -360,7 +372,7 @@ function Start-Frontend {
     $psi = [System.Diagnostics.ProcessStartInfo]::new($shellCmd, "$shellArg `"pnpm run dev`"")
     $psi.WorkingDirectory = $FRONTEND_DIR
     $psi.UseShellExecute  = $false
-    foreach ($k in $envBlock.Keys) { $psi.Environment[$k] = [string]$envBlock[$k] }
+    foreach ($k in $envBlock.Keys) { $psi.EnvironmentVariables[$k] = [string]$envBlock[$k] }
     $jobs.Add([System.Diagnostics.Process]::Start($psi))
 }
 
