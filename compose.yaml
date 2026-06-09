@@ -82,10 +82,10 @@ services:
       DB_USER: ${DB_USER:-postgres}
       DB_PASSWORD: ${DB_PASSWORD:-postgres}
       DB_NAME: ${DB_NAME:-nsw_agency_db}
-      PORT: ${AGENCY_PORT:-8082}
+      PORT: ${AGENCY_PORT:-8081}
     # Both sides from the same root var: host port == container listen port (PORT).
     ports:
-      - "${AGENCY_PORT:-8082}:${AGENCY_PORT:-8082}"
+      - "${AGENCY_PORT:-8081}:${AGENCY_PORT:-8081}"
     depends_on:
       db:
         condition: service_healthy

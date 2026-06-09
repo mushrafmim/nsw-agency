@@ -13,7 +13,8 @@ RUN go build -ldflags="-s -w" -o /out/agency ./cmd/server \
   && go build -ldflags="-s -w" -o /out/migrate ./cmd/migrate \
   && go build -ldflags="-s -w" -o /out/seed ./cmd/seed
 
-RUN git clone --depth 1 https://github.com/OpenNSW/nsw-srilanka /out/nsw-srilanka
+ARG NSW_SRILANKA_REF=main
+RUN git clone --depth 1 --branch ${NSW_SRILANKA_REF} https://github.com/OpenNSW/nsw-srilanka /out/nsw-srilanka
 
 FROM debian:bookworm-slim
 
