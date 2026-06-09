@@ -13,6 +13,8 @@ RUN go build -ldflags="-s -w" -o /out/agency ./cmd/server \
   && go build -ldflags="-s -w" -o /out/migrate ./cmd/migrate \
   && go build -ldflags="-s -w" -o /out/seed ./cmd/seed
 
+RUN git clone --depth 1 https://github.com/OpenNSW/nsw-srilanka /out/nsw-srilanka
+
 FROM debian:bookworm-slim
 
 LABEL org.opencontainers.image.source="https://github.com/OpenNSW/nsw-agency"
@@ -27,10 +29,15 @@ RUN apt-get update \
 
 WORKDIR /app
 
-COPY --from=builder /out/agency /app/agency
-COPY --from=builder /out/migrate /app/migrate
-COPY --from=builder /out/seed /app/seed
-COPY --from=builder /app/migrations /app/migrations
+COPY --from=builder --chown=appuser:appuser /out/agency /app/agency
+COPY --from=builder --chown=appuser:appuser /out/migrate /app/migrate
+COPY --from=builder --chown=appuser:appuser /out/seed /app/seed
+COPY --from=builder --chown=appuser:appuser /app/migrations /app/migrations
+COPY --from=builder --chown=appuser:appuser /app/data/task-configs /app/data/task-configs
+COPY --from=builder --chown=appuser:appuser /out/nsw-srilanka/configs /app/nsw-srilanka-configs
+
+ENV TASK_CONFIGS_DIR=/app/data/task-configs
+ENV FORM_TEMPLATES_DIR=/app/nsw-srilanka-configs
 
 # Runtime settings — UID 1001 matches appuser, OpenShift-compatible
 USER appuser
