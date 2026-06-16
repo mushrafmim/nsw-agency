@@ -380,11 +380,11 @@ oc rollout status deploy/agency-frontend
 
 Deploy the same images per agency, changing only configuration:
 
-| Setting | NPQS | FCAU | IRD | CDA |
+| Setting | NPQS | FCAU | CDA | SLPA |
 | --- | --- | --- | --- | --- |
-| `AUTH_EXPECTED_OU` / `VITE_EXPECTED_OU_HANDLE` | `npqs` | `fcau` | `ird` | `cda` |
-| `VITE_BRANDING_NAME` | `npqs` | `fcau` | `ird` | `cda` |
-| Seed file | `npqs_users.json` | `fcau_users.json` | `ird_users.json` | `cda_users.json` |
+| `AUTH_EXPECTED_OU` / `VITE_EXPECTED_OU_HANDLE` | `npqs` | `fcau` | `cda` | `slpa` |
+| `VITE_BRANDING_NAME` | `npqs` | `fcau` | `cda` | `slpa` |
+| Seed file | `npqs_users.json` | `fcau_users.json` | `cda_users.json` | `slpa_users.json` |
 | `NSW_CLIENT_ID` / `VITE_IDP_CLIENT_ID` | agency-specific | agency-specific | agency-specific | agency-specific |
 
 Use a separate namespace (or a name suffix) per agency, e.g. `agency-backend-fcau`.
