@@ -41,12 +41,14 @@ func writeFormFile(t *testing.T, root, name, content string) {
 type callbackCapture struct {
 	mu    sync.Mutex
 	calls [][]byte
+	paths []string
 }
 
-func (c *callbackCapture) record(body []byte) {
+func (c *callbackCapture) record(body []byte, path string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.calls = append(c.calls, body)
+	c.paths = append(c.paths, path)
 }
 
 func (c *callbackCapture) lastCall() map[string]any {
@@ -60,6 +62,15 @@ func (c *callbackCapture) lastCall() map[string]any {
 	return got
 }
 
+func (c *callbackCapture) lastPath() string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if len(c.paths) == 0 {
+		return ""
+	}
+	return c.paths[len(c.paths)-1]
+}
+
 // newCallbackServer returns an httptest server that responds 200 OK to any POST
 // and captures the request body for assertions.
 func newCallbackServer(t *testing.T) (*httptest.Server, *callbackCapture) {
@@ -67,7 +78,7 @@ func newCallbackServer(t *testing.T) (*httptest.Server, *callbackCapture) {
 	capture := &callbackCapture{}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
-		capture.record(body)
+		capture.record(body, r.URL.Path)
 		w.WriteHeader(http.StatusOK)
 	}))
 	t.Cleanup(srv.Close)
@@ -322,26 +333,58 @@ func TestReviewApplication_CallsServiceURL(t *testing.T) {
 		t.Fatalf("ReviewApplication failed: %v", err)
 	}
 
+	lastPath := h.capture.lastPath()
+	expectedPath := "/t-callback"
+	if lastPath != expectedPath {
+		t.Errorf("callback URL path: got %q, want %q", lastPath, expectedPath)
+	}
+
 	body := h.capture.lastCall()
 	if body == nil {
 		t.Fatalf("expected callback to be invoked, got no calls")
 	}
-	if body["task_id"] != "t-callback" {
-		t.Errorf("callback task_id: got %v, want t-callback", body["task_id"])
+	if body["command"] != "approve" {
+		t.Errorf("callback command: got %v, want approve", body["command"])
 	}
 	payload, ok := body["payload"].(map[string]any)
 	if !ok {
-		t.Fatalf("expected payload object in callback, got %T", body["payload"])
+		t.Fatalf("expected payload object, got %T", body["payload"])
 	}
-	if payload["action"] != "AGENCY_VERIFICATION" {
-		t.Errorf("callback payload.action: got %v, want AGENCY_VERIFICATION", payload["action"])
+	if payload["review_outcome"] != "approve" || payload["comment"] != "lgtm" {
+		t.Errorf("callback payload forwarded incorrectly: got %v", payload)
 	}
-	content, ok := payload["content"].(map[string]any)
+}
+
+func TestFeedbackApplication_CallsServiceURL(t *testing.T) {
+	h := newServiceHarness(t, nil)
+	h.seed("t-feedback-cb", "alpha", nil)
+
+	err := h.service.FeedbackApplication(context.Background(), "t-feedback-cb", map[string]any{
+		"feedback": "please correct container numbers",
+	})
+	if err != nil {
+		t.Fatalf("FeedbackApplication failed: %v", err)
+	}
+
+	lastPath := h.capture.lastPath()
+	expectedPath := "/t-feedback-cb"
+	if lastPath != expectedPath {
+		t.Errorf("callback URL path: got %q, want %q", lastPath, expectedPath)
+	}
+
+	body := h.capture.lastCall()
+	if body == nil {
+		t.Fatalf("expected callback to be invoked, got no calls")
+	}
+	if body["command"] != "request-amendment" {
+		t.Errorf("callback command: got %v, want request-amendment", body["command"])
+	}
+	payload, ok := body["payload"].(map[string]any)
 	if !ok {
-		t.Fatalf("expected payload.content object, got %T", payload["content"])
+		t.Fatalf("expected payload object, got %T", body["payload"])
 	}
-	if content["review_outcome"] != "approve" || content["comment"] != "lgtm" {
-		t.Errorf("payload.content forwarded incorrectly: got %v", content)
+	if payload["feedback"] != "please correct container numbers" {
+		t.Errorf("callback payload forwarded incorrectly: got %v", payload)
 	}
 }
 
@@ -526,5 +569,60 @@ func TestGetApplication_NoConfig_EmptyAllowedActions(t *testing.T) {
 	// No config → falls back to full access.
 	if len(app.AllowedActions) != 3 {
 		t.Errorf("expected 3 default allowed actions, got %v", app.AllowedActions)
+	}
+}
+
+func TestBuildCallbackURL(t *testing.T) {
+	tests := []struct {
+		name       string
+		serviceURL string
+		taskID     string
+		want       string
+	}{
+		{
+			name:       "simple URL",
+			serviceURL: "http://example.com/callback",
+			taskID:     "task-123",
+			want:       "http://example.com/callback/task-123",
+		},
+		{
+			name:       "simple URL with trailing slash",
+			serviceURL: "http://example.com/callback/",
+			taskID:     "task-123",
+			want:       "http://example.com/callback/task-123",
+		},
+		{
+			name:       "URL with placeholder",
+			serviceURL: "http://example.com/callback/{id}/submit",
+			taskID:     "task-123",
+			want:       "http://example.com/callback/task-123/submit",
+		},
+		{
+			name:       "URL with query parameters",
+			serviceURL: "http://example.com/callback?token=xyz",
+			taskID:     "task-123",
+			want:       "http://example.com/callback/task-123?token=xyz",
+		},
+		{
+			name:       "URL with query parameters and trailing slash in path",
+			serviceURL: "http://example.com/callback/?token=xyz",
+			taskID:     "task-123",
+			want:       "http://example.com/callback/task-123?token=xyz",
+		},
+		{
+			name:       "invalid URL fallback",
+			serviceURL: ":invalid-url",
+			taskID:     "task-123",
+			want:       ":invalid-url/task-123",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := buildCallbackURL(tt.serviceURL, tt.taskID)
+			if got != tt.want {
+				t.Errorf("buildCallbackURL(%q, %q) = %q, want %q", tt.serviceURL, tt.taskID, got, tt.want)
+			}
+		})
 	}
 }

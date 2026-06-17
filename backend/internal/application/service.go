@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net/url"
+	"strings"
 	"time"
 
 	"github.com/OpenNSW/nsw-agency/backend/internal/auth"
@@ -89,11 +91,10 @@ type PagedResponse[T any] struct {
 	PageSize int   `json:"pageSize"`
 }
 
-// TaskResponse represents the response sent back to the service
+// TaskResponse represents the Style B callback envelope sent back to the NSW service
 type TaskResponse struct {
-	TaskID        string `json:"task_id"`
-	ConsignmentID string `json:"consignment_id"`
-	Payload       any    `json:"payload"`
+	Command string `json:"command"`
+	Payload any    `json:"payload"`
 }
 
 type service struct {
@@ -297,6 +298,20 @@ func (s *service) GetApplication(ctx context.Context, taskID string) (*Applicati
 	return app, nil
 }
 
+// buildCallbackURL constructs the callback URL target.
+func buildCallbackURL(serviceURL, taskID string) string {
+	if strings.Contains(serviceURL, "{id}") {
+		return strings.ReplaceAll(serviceURL, "{id}", url.PathEscape(taskID))
+	}
+	u, err := url.Parse(serviceURL)
+	if err != nil {
+		return fmt.Sprintf("%s/%s", strings.TrimSuffix(serviceURL, "/"), url.PathEscape(taskID))
+	}
+	u.Path = strings.TrimSuffix(u.Path, "/") + "/" + taskID
+	u.RawPath = ""
+	return u.String()
+}
+
 // ReviewApplication approves or rejects an application
 func (s *service) ReviewApplication(ctx context.Context, taskID string, reviewerResponse map[string]any) error {
 	app, err := s.GetApplication(ctx, taskID)
@@ -304,16 +319,30 @@ func (s *service) ReviewApplication(ctx context.Context, taskID string, reviewer
 		return err
 	}
 
-	response := TaskResponse{
-		TaskID:        app.TaskID,
-		ConsignmentID: app.ConsignmentID,
-		Payload: map[string]any{
-			"action":  "AGENCY_VERIFICATION",
-			"content": reviewerResponse,
-		},
+	command := "approve"
+	if config, err := s.templateProvider.GetTaskConfig(app.TaskCode); err == nil && config.Behavior != nil {
+		outcomeField := config.Behavior.OutcomeField
+		if outcomeField == "" {
+			outcomeField = taskconfig.DefaultOutcomeField
+		}
+		if outcome, ok := reviewerResponse[outcomeField].(string); ok && outcome != "" {
+			command = outcome
+		}
+	} else {
+		if outcome, ok := reviewerResponse[taskconfig.DefaultOutcomeField].(string); ok && outcome != "" {
+			command = outcome
+		}
 	}
 
-	if err := s.sendToService(ctx, app.ServiceURL, response); err != nil {
+	// Build Style B payload: envelope containing "command" and nested "payload"
+	response := TaskResponse{
+		Command: command,
+		Payload: reviewerResponse,
+	}
+
+	callbackURL := buildCallbackURL(app.ServiceURL, app.TaskID)
+
+	if err := s.sendToService(ctx, callbackURL, response); err != nil {
 		return fmt.Errorf("failed to send response to service: %w", err)
 	}
 
@@ -346,29 +375,31 @@ func (s *service) FeedbackApplication(ctx context.Context, taskID string, conten
 		Round:     len(app.FeedbackHistory) + 1,
 	}
 
+	// Build Style B payload for feedback/amendment
 	response := TaskResponse{
-		TaskID:        app.TaskID,
-		ConsignmentID: app.ConsignmentID,
-		Payload: map[string]any{
-			"action":  "AGENCY_VERIFICATION_FEEDBACK",
-			"content": content,
-		},
+		Command: "request-amendment",
+		Payload: content,
 	}
 
-	if err := s.sendToService(ctx, app.ServiceURL, response); err != nil {
+	callbackURL := buildCallbackURL(app.ServiceURL, app.TaskID)
+
+	if err := s.sendToService(ctx, callbackURL, response); err != nil {
 		return fmt.Errorf("failed to send feedback to service: %w", err)
 	}
 
 	return s.store.AppendFeedback(taskID, entry)
 }
 
-func (s *service) sendToService(ctx context.Context, serviceURL string, response TaskResponse) error {
+func (s *service) sendToService(ctx context.Context, callbackURL string, response TaskResponse) error {
 	jsonData, err := json.Marshal(response)
 	if err != nil {
 		return fmt.Errorf("failed to marshal response: %w", err)
 	}
 
-	resp, err := s.httpClient.Post(serviceURL, "application/json", jsonData)
+	// log the jsonData
+	slog.Log(ctx, slog.LevelDebug, "sending response to service", "url", callbackURL, "payload", string(jsonData))
+
+	resp, err := s.httpClient.Post(callbackURL, "application/json", jsonData)
 	if err != nil {
 		return err
 	}
