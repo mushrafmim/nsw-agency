@@ -32,7 +32,7 @@ WORKDIR /app
 
 COPY --from=builder --chown=appuser:appuser /out/agency /app/agency
 COPY --from=builder --chown=appuser:appuser /out/migrate /app/migrate
-COPY --from=builder --chown=appuser:appuser /out/nswac /usr/local/bin/nswac
+COPY --from=builder /out/nswac /usr/local/bin/nswac
 COPY --from=builder --chown=appuser:appuser /app/migrations /app/migrations
 COPY --from=builder --chown=appuser:appuser /app/data/task-configs /app/data/task-configs
 COPY --from=builder --chown=appuser:appuser /out/nsw-srilanka/configs /app/nsw-srilanka-configs

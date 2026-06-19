@@ -113,7 +113,7 @@ func runUserAddInteractive() {
 		fatalf("%v", err)
 	}
 	if inserted == 0 {
-		fmt.Printf("nswac: user %q already exists — skipped\n", email)
+		fmt.Printf("nswac: user %q already exists — roles updated\n", email)
 	} else {
 		fmt.Printf("nswac: user %q created successfully\n", email)
 	}

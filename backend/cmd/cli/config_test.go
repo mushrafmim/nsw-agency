@@ -3,7 +3,7 @@ package main
 import "testing"
 
 func TestCLILoadConfig_Defaults(t *testing.T) {
-	t.Setenv("DB_DRIVER", "sqlite")
+	t.Setenv("DB_DRIVER", "")
 
 	cfg, err := LoadConfig()
 	if err != nil {
