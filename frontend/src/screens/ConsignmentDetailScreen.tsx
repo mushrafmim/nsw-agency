@@ -42,6 +42,7 @@ export function ConsignmentDetailScreen() {
   )
   const [agencyFormData, setAgencyFormData] = useState<Record<string, unknown>>({})
   const [formErrors, setFormErrors] = useState<unknown[]>([])
+  const [showErrors, setShowErrors] = useState(false)
 
   const ajvInstance = useMemo(() => createAjv({ useDefaults: true }), [])
 
@@ -51,8 +52,18 @@ export function ConsignmentDetailScreen() {
       setError(t('errors.dataUnavailable'))
       return
     }
-    if (formErrors.length > 0) {
+
+    let hasErrors = formErrors.length > 0
+    if (agencyFormConfig) {
+      const isValid = ajvInstance.validate(agencyFormConfig.schema, agencyFormData)
+      if (!isValid) {
+        hasErrors = true
+      }
+    }
+
+    if (hasErrors) {
       setError(t('errors.validationErrors'))
+      setShowErrors(true)
       return
     }
     setIsSubmitting(true)
@@ -111,6 +122,7 @@ export function ConsignmentDetailScreen() {
           setAgencyFormConfig(null)
         }
         setAgencyFormData(data.agencyActionData || {})
+        setShowErrors(false)
       } catch (err) {
         setError(t('errors.loadFailed'))
         console.error(err)
@@ -284,6 +296,7 @@ export function ConsignmentDetailScreen() {
                   uischema={agencyFormConfig.uiSchema}
                   data={agencyFormData}
                   renderers={radixRenderers}
+                  validationMode={showErrors ? 'ValidateAndShow' : 'ValidateAndHide'}
                   onChange={({ data, errors }: { data: Record<string, unknown>; errors?: unknown[] }) => {
                     setAgencyFormData(data)
                     setFormErrors(errors || [])
