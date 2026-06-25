@@ -15,9 +15,9 @@ It is written for a per-agency deployment model (NPQS, FCAU, IRD, CDA) backed by
 
 Each agency runs **one** workload:
 
-| Workload                       | Image                                          | Container port                | Exposed via         |
-|--------------------------------|------------------------------------------------|-------------------------------|---------------------|
-| Agency (Go server: API + SPA)  | `ghcr.io/opennsw/nsw-agency/nsw-agency:<tag>`  | `8081` (override with `PORT`) | `Service` + `Route` |
+| Workload                      | Image                          | Container port                | Exposed via         |
+|-------------------------------|--------------------------------|-------------------------------|---------------------|
+| Agency (Go server: API + SPA) | `ghcr.io/opennsw/agency:<tag>` | `8081` (override with `PORT`) | `Service` + `Route` |
 
 The server emits the SPA's runtime config (`VITE_*`) at `/runtime-env.js` from its
 environment, so the same image is reconfigurable per environment/agency without a rebuild.
@@ -52,8 +52,8 @@ the SQL migrations, the task configs, and the form templates (cloned from
 **data** is supplied dynamically (§5), so you can re-seed without rebuilding.
 
 ```bash
-docker build -t ghcr.io/opennsw/nsw-agency/nsw-agency:<tag> .
-docker push   ghcr.io/opennsw/nsw-agency/nsw-agency:<tag>
+docker build -t ghcr.io/opennsw/agency:<tag> .
+docker push   ghcr.io/opennsw/agency:<tag>
 ```
 
 > Tagged releases (`vX.Y.Z`) are built and published automatically by
@@ -199,7 +199,7 @@ spec:
       restartPolicy: Never
       containers:
         - name: seed
-          image: ghcr.io/opennsw/nsw-agency/nsw-agency:<tag>
+          image: ghcr.io/opennsw/agency:<tag>
           command: ["nswac", "user", "add", "--file", "/seed/fcau_users.json"]
           envFrom:
             - configMapRef: { name: agency-config }
@@ -250,14 +250,14 @@ spec:
       # Apply pending migrations before the server starts. Idempotent.
       initContainers:
         - name: migrate
-          image: ghcr.io/opennsw/nsw-agency/nsw-agency:<tag>
+          image: ghcr.io/opennsw/agency:<tag>
           command: ["/app/migrate", "up"]
           envFrom:
             - configMapRef: { name: agency-config }
             - secretRef:    { name: agency-secret }
       containers:
         - name: agency
-          image: ghcr.io/opennsw/nsw-agency/nsw-agency:<tag>
+          image: ghcr.io/opennsw/agency:<tag>
           ports:
             - containerPort: 8081
           envFrom:
@@ -345,8 +345,9 @@ Use a separate namespace (or a name suffix) per agency, e.g. `agency-fcau`.
 # Migrations applied
 oc logs deploy/agency -c migrate
 
-# Health
-oc exec deploy/agency -- wget -qO- localhost:8081/health
+# Health — the runtime image is slim (no curl/wget inside the pod), so probe
+# the endpoint through the Route from your machine instead.
+curl -k "https://$(oc get route agency -o jsonpath='{.spec.host}')/health"
 
 # Seeded users (check Job output)
 oc logs job/agency-seed   # → "nswac: successfully imported N user(s)"

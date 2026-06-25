@@ -16,7 +16,7 @@ permissions:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: nsw-agency
+  IMAGE_NAME: agency
 
 jobs:
   build:

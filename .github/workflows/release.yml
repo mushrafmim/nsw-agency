@@ -14,7 +14,7 @@ env:
   REGISTRY: ghcr.io
   # The whole app ships as ONE image (root Dockerfile): the Go server serves the
   # API and the officer-portal SPA from one process.
-  IMAGE_NAME: nsw-agency
+  IMAGE_NAME: agency
 
 jobs:
   build-and-publish:
