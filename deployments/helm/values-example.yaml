@@ -114,3 +114,12 @@ ingress:
       paths:
         - path: "/"
           pathType: Prefix
+  # TLS termination at the ingress. The portal needs HTTPS for the OIDC PKCE
+  # flow (a secure context — see the chart README), so enable this on
+  # non-OpenShift clusters. secretName must reference a kubernetes.io/tls Secret
+  # you create out-of-band, e.g.:
+  #   kubectl create secret tls nsw-agency-tls --cert=tls.crt --key=tls.key
+  tls: []
+  #  - secretName: nsw-agency-tls
+  #    hosts:
+  #      - agency.example.com

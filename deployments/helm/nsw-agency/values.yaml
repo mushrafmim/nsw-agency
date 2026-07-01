@@ -23,6 +23,20 @@ imagePullSecrets: []
 nameOverride: ""
 fullnameOverride: ""
 
+# Pod-level security context (applies to the server and migration pods), e.g.
+#   runAsNonRoot: true
+#   runAsUser: 1000
+#   fsGroup: 1000
+podSecurityContext: {}
+
+# Container-level security context (applies to the server and migration
+# containers), e.g.
+#   allowPrivilegeEscalation: false
+#   readOnlyRootFilesystem: true
+#   capabilities:
+#     drop: ["ALL"]
+securityContext: {}
+
 # Port the application container listens on (set per component).
 containerPort: 8080
 
