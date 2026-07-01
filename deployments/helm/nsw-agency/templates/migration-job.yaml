@@ -2,7 +2,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: {{ include "nsw-agency.fullname" . }}-migrate
+  name: {{ printf "%s-migrate" (include "nsw-agency.fullname" .) | trunc 63 | trimSuffix "-" }}
   labels:
     {{- include "nsw-agency.labels" . | nindent 4 }}
     app.kubernetes.io/component: migrate
@@ -27,12 +27,20 @@ spec:
     spec:
       # A Job pod must not be restarted forever; run once and stop.
       restartPolicy: Never
+      {{- with .Values.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       containers:
         - name: migrate
+          {{- with .Values.securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
           # Same image as the server; only the command differs.
           image: "{{ .Values.image.repository }}:{{ required "image.tag is required — set it per environment or at install (e.g. --set image.tag=1.4.0)" .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
