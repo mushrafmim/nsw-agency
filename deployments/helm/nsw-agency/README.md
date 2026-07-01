@@ -42,15 +42,38 @@ kubectl create secret generic nsw-agency-secrets \
   --from-literal=nsw-client-secret=...
 ```
 
+## Accessing the portal (secure context required)
+
+The officer portal logs in via OIDC with PKCE, which uses the Web Crypto API
+(`window.crypto.subtle`). Browsers only expose Web Crypto in a **secure
+context** — that means **HTTPS**, or plain HTTP on **`localhost`/`127.0.0.1`**.
+On a plain-HTTP, non-localhost origin (e.g. `http://agency.example.com` through
+an ingress), `crypto.subtle` is `undefined` and `signinRedirect()` fails
+silently *after* fetching the discovery document — the page just sits there with
+no redirect and no error.
+
+So serve the portal one of these ways:
+
+- **HTTPS** (production and recommended for any real host): terminate TLS at the
+  ingress via `ingress.tls` (referencing a `kubernetes.io/tls` Secret) or at the
+  OpenShift `route`, and browse `https://<host>`.
+- **`localhost` over HTTP** (quick local testing): `kubectl port-forward
+  svc/<release> 8080:80` and browse `http://localhost:8080`.
+
+Whichever you pick, `VITE_APP_URL` (the OIDC `redirect_uri`) must **exactly
+equal** the origin you browse and be registered as an allowed redirect URI in
+the IdP. A quick check in the browser console: `window.isSecureContext` must be
+`true`.
+
 ## Releasing
 
 The **app image** and the **chart** are versioned and released independently,
 because they change at different rates. Each has its own tag namespace:
 
-| Artifact | Tag | Workflow | Publishes |
-| --- | --- | --- | --- |
-| App image | `v1.2.3` | [`release.yml`](../../../.github/workflows/release.yml) | `ghcr.io/opennsw/agency:1.2.3` + a GitHub Release |
-| Chart | `chart-v0.3.0` | [`release-chart.yml`](../../../.github/workflows/release-chart.yml) | `oci://ghcr.io/opennsw/charts/nsw-agency:0.3.0` |
+| Artifact  | Tag            | Workflow                                                            | Publishes                                         |
+|-----------|----------------|---------------------------------------------------------------------|---------------------------------------------------|
+| App image | `v1.2.3`       | [`release.yml`](../../../.github/workflows/release.yml)             | `ghcr.io/opennsw/agency:1.2.3` + a GitHub Release |
+| Chart     | `chart-v0.3.0` | [`release-chart.yml`](../../../.github/workflows/release-chart.yml) | `oci://ghcr.io/opennsw/charts/nsw-agency:0.3.0`   |
 
 ### `appVersion` vs `image.tag`
 
