@@ -224,7 +224,7 @@ func (s *service) GetApplications(ctx context.Context, status string, consignmen
 			permissions = config.Permissions
 		}
 
-		accessible, _ := resolveAccess(roles, permissions)
+		accessible, _ := rbac.ResolveAccess(roles, permissions)
 		if !accessible {
 			continue
 		}
@@ -306,10 +306,10 @@ func (s *service) buildApplication(ctx context.Context, record *ApplicationRecor
 			// access to any authenticated user. Fail closed.
 			return nil, fmt.Errorf("failed to load task config for task %s: %w", record.TaskCode, err)
 		}
-		// Config genuinely absent — omit metadata/forms and fall back to the
-		// default access resolution (preserves prior behaviour).
+		// Config genuinely absent — omit metadata/forms. With no permissions
+		// declared for this task code, nobody is granted access by default.
 		slog.WarnContext(ctx, "task config not found for application", "taskID", record.TaskID, "taskCode", record.TaskCode)
-		_, app.AllowedActions = resolveAccess(roles, nil)
+		_, app.AllowedActions = rbac.ResolveAccess(roles, nil)
 	} else {
 		app.Title = config.Meta.Title
 		app.Description = config.Meta.Description
@@ -320,7 +320,7 @@ func (s *service) buildApplication(ctx context.Context, record *ApplicationRecor
 			app.CertificateDataSchema = config.Certificate.DataSchema
 		}
 
-		_, app.AllowedActions = resolveAccess(roles, config.Permissions)
+		_, app.AllowedActions = rbac.ResolveAccess(roles, config.Permissions)
 
 		if config.Forms.View != "" {
 			if form, err := generictemplate.Load(ctx, s.artifactRegistry, config.Forms.View); err == nil {
@@ -460,13 +460,6 @@ func (s *service) ReleaseApplication(ctx context.Context, taskID string) error {
 		return err
 	}
 	return nil
-}
-
-func resolveAccess(roles []rbac.RoleRecord, permissions []taskconfig.Permission) (bool, []string) {
-	if len(permissions) == 0 {
-		return true, []string{"VIEW", "REVIEW", "FEEDBACK"}
-	}
-	return rbac.ResolveAccess(roles, permissions)
 }
 
 func (s *service) Close() error {
