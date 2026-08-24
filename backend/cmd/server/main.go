@@ -168,6 +168,8 @@ func main() {
 	mux.Handle("GET /api/v1/applications/{taskId}", protect(rbacMiddleware.RequireAction("VIEW")(http.HandlerFunc(handler.HandleGetApplication))))
 	mux.Handle("POST /api/v1/applications/{taskId}/review", protect(rbacMiddleware.RequireAction("REVIEW")(http.HandlerFunc(handler.HandleReviewApplication))))
 	mux.Handle("POST /api/v1/applications/{taskId}/feedback", protect(rbacMiddleware.RequireAction("FEEDBACK")(http.HandlerFunc(feedbackHandler.HandleFeedback))))
+	mux.Handle("POST /api/v1/applications/{taskId}/claim", protect(rbacMiddleware.RequireAction("REVIEW")(http.HandlerFunc(handler.HandleClaimApplication))))
+	mux.Handle("POST /api/v1/applications/{taskId}/release", protect(rbacMiddleware.RequireAction("REVIEW")(http.HandlerFunc(handler.HandleReleaseApplication))))
 	mux.Handle("POST /api/v1/storage", protect(http.HandlerFunc(storageHandler.HandleCreateUpload)))
 	mux.Handle("GET /api/v1/storage/{key}", protect(http.HandlerFunc(storageHandler.HandleGetUploadURL)))
 	mux.Handle("POST /api/v1/applications/{taskId}/certificate", protect(rbacMiddleware.RequireAction("REVIEW")(http.HandlerFunc(certificateHandler.HandleGenerate))))
